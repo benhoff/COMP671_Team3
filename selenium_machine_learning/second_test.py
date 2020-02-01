@@ -5,6 +5,8 @@ import numpy as np
 import cv2
 import io
 
+from code import interact
+
 from pixellinkdecoder import PixelLinkDecoder
 
 def _get_files():
@@ -28,7 +30,8 @@ def main():
     driver.get("https://imgur.com/")
 
     logo = driver.find_element_by_tag_name('svg')
-    img_data = logo.screenshot_as_png
+    img_data = driver.get_screenshot_as_png()
+    # img_data = logo.screenshot_as_png
     # img_data = logo.screenshot
 
     nparr = np.frombuffer(img_data, np.uint8)
