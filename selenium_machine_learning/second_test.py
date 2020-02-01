@@ -30,12 +30,28 @@ def main():
     driver.get("https://imgur.com/")
 
     logo = driver.find_element_by_tag_name('svg')
+
+    location = logo.location
+    size = logo.size
+
     img_data = driver.get_screenshot_as_png()
     # img_data = logo.screenshot_as_png
     # img_data = logo.screenshot
 
     nparr = np.frombuffer(img_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    fudge_factor = 125
+
+    # left = location['x']
+    # top = location['y']
+    left = 0
+    top = 0
+    right = left + size['width'] + fudge_factor
+    bottom = top + size['height'] + fudge_factor
+
+    print(location, size)
+
+    img = img[top:int(bottom), left:int(right)]
 
     # GRAVEYARD ------
     # Ref: https://stackoverflow.com/a/25589276/2701402
@@ -71,6 +87,7 @@ def main():
                                                                              ra=a.shape, rb=b.shape))
         return 1
 
+    driver.close()
     dcd = PixelLinkDecoder()
     dcd.load(img, a, b)
     dcd.decode()  # results are in dcd.bboxes
