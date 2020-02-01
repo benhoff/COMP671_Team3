@@ -1,14 +1,51 @@
-def main():
-    if args.model_path.endswith('.xml'):
-        td = cv2.dnn.readNet(args.model_path, args.model_path[:-3] + 'bin')
-    else:
-        print("Model's XML file expected")
-        return 1
+import os
 
-    img = cv2.imread(args.image_path)
-    if img is None:
-        print("Failed to load image")
-        return 1
+from selenium import webdriver
+import numpy as np
+import cv2
+import io
+
+from pixellinkdecoder import PixelLinkDecoder
+
+def _get_files():
+    dir_ = os.path.abspath(os.path.dirname(__file__))
+    intel_dir = os.path.join(dir_, 'intel', 'text-detection-0004', 'FP16')
+
+    bin_file = os.path.join(intel_dir, 'text-detection-0004.bin')
+    xml_file = os.path.join(intel_dir, 'text-detection-0004.xml')
+
+    return bin_file, xml_file
+
+
+
+# Selenium to opencv
+# https://stackoverflow.com/a/50850092/2701402
+def main():
+    bin, xml = _get_files()
+    td = cv2.dnn.readNet(xml, bin)
+
+    driver = webdriver.Chrome()
+    driver.get("https://imgur.com/")
+
+    logo = driver.find_element_by_tag_name('svg')
+    img_data = logo.screenshot_as_png
+    # img_data = logo.screenshot
+
+    nparr = np.frombuffer(img_data, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # GRAVEYARD ------
+    # Ref: https://stackoverflow.com/a/25589276/2701402
+    # see comment of above answer
+    # img_data = io.BytesIO(img_data)
+    # img = np.asarray(img_data)
+    # img = cv2.imread(img_data)
+
+    # img = cv2.UMat(img)
+    # img = np.float32(img)
+
+    # GRAVEYARD ------
+    
 
     out_layer_names = td.getUnconnectedOutLayersNames()
     expected_out_layer_names = (['model/link_logits_/add', 'model/segm_logits/add'],
@@ -25,7 +62,6 @@ def main():
     expected_a_shape = (1, 16, 192, 320)
     expected_b_shape = (1, 2, 192, 320)
     if a.shape != expected_a_shape or b.shape != expected_b_shape:
-This conversation was marked as resolved by Wovchena
         print("Net has returned outputs of different shape, please check model files")
         print("Expected shapes: ({ea}, {eb}), returned: ({ra}, {rb})".format(ea=expected_a_shape,
                                                                              eb=expected_b_shape,
@@ -39,10 +75,4 @@ This conversation was marked as resolved by Wovchena
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-i", required=True, dest="image_path", help="path to input image")
-    ap.add_argument("-m", required=True, dest="model_path", help="path to model's XML file")
-    ap.add_argument("--no_show", dest="test", action='store_true', help="disable imshow() and wwaitKey()")
-    ap.set_defaults(test=False)
-    args = ap.parse_args()
-
+    main()
