@@ -1,36 +1,28 @@
+import os
 import cv2
 import numpy as np
 
+
+def _get_detection_files():
+    dir_ = os.path.abspath(os.path.dirname(__file__))
+    intel_dir = os.path.join(dir_, 'intel', 'text-detection-0004', 'FP16')
+
+    bin_file = os.path.join(intel_dir, 'text-detection-0004.bin')
+    xml_file = os.path.join(intel_dir, 'text-detection-0004.xml')
+
+    return bin_file, xml_file
+
+
 class PixelLinkDecoder():
-    """ Decoder for Intel's version of PixelLink "text-detection-0003" or "text-detection-0004".
+    """ Decoder for Intel's version of PixelLink "text-detection-0003".
         You will need OpenCV compiled with Inference Engine to use this.
-        ** Example of usage:**
-        .. code-block:: python
-            td = cv2.dnn.readNet('./text-detection-0003.xml',
-                                 './text-detection-0003.bin')
-            img = cv2.imread('tmp.jpg')
-            blob = cv2.dnn.blobFromImage(img, 1, (1280,768))
-            td.setInput(blob)
-            a, b = td.forward(td.getUnconnectedOutLayersNames())
-            dcd = PixelLinkDecoder()
-            dcd.load(img, a, b)
-            dcd.decode()  # results are in dcd.bboxes
-            dcd.plot_result_pyplot(img)
     """
     def __init__(self):
-        pass
+        bin, xml = _get_detection_files()
+        self.td = cv2.dnn.readNet(xml, bin)
 
-    def load(self, image: np.ndarray, link_scores: np.ndarray,
-             pixel_scores: np.ndarray, pixel_conf_threshold=0.8,
-             link_conf_threshold=0.8, four_neighbours=False):
-        """ Load data to decoder
-            :param image: BGR image
-            :param pixel_scores: first output of text-detection-0003 or text-detection-0004 model
-            :param link_scores: second output of text-detection-0003 or text-detection-0004 model
-            :param float pixel_conf_threshold: threshold value for pixels
-            :param float link_conf_threshold: threshold value for links
-            :param bool four_neighbours: use 4 or 8 neighbours comparsion algorythm
-        """
+    def load(self, image, pixel_scores, link_scores,
+             pixel_conf_threshold=None, link_conf_threshold=None, four_neighbours=False):
         self.image_shape = image.shape[0:2]
         self.pixel_scores = self._set_pixel_scores(pixel_scores)
         self.link_scores = self._set_link_scores(link_scores)
@@ -40,8 +32,16 @@ class PixelLinkDecoder():
         else:
             self._get_neighbours = self._get_neighbours_8
 
-        self.pixel_conf_threshold = pixel_conf_threshold
-        self.link_conf_threshold = link_conf_threshold
+        if pixel_conf_threshold is None:
+            self.pixel_conf_threshold = 0.75
+        else:
+            self.pixel_conf_threshold = pixel_conf_threshold
+
+        if link_conf_threshold is None:
+            self.link_conf_threshold = 0.9
+        else:
+            self.link_conf_threshold = link_conf_threshold
+
         self.pixel_mask = self.pixel_scores >= self.pixel_conf_threshold
         self.link_mask = self.link_scores >= self.link_conf_threshold
         self.points = list(zip(*np.where(self.pixel_mask)))
@@ -54,7 +54,13 @@ class PixelLinkDecoder():
     def _softmax(self, x, axis=None):
         return np.exp(x - self._logsumexp(x, axis=axis, keepdims=True))
 
-    def _logsumexp(self, a, axis=None, keepdims=False):
+    def _logsumexp(self, a, axis=None, b=None, keepdims=False, return_sign=False):
+        if b is not None:
+            a, b = np.broadcast_arrays(a, b)
+            if np.any(b == 0):
+                a = a + 0.  # promote to at least float
+                a[b == 0] = -np.inf
+
         a_max = np.amax(a, axis=axis, keepdims=True)
 
         if a_max.ndim > 0:
@@ -62,27 +68,38 @@ class PixelLinkDecoder():
         elif not np.isfinite(a_max):
             a_max = 0
 
-        tmp = np.exp(a - a_max)
+        if b is not None:
+            b = np.asarray(b)
+            tmp = b * np.exp(a - a_max)
+        else:
+            tmp = np.exp(a - a_max)
 
         # suppress warnings about log of zero
         with np.errstate(divide='ignore'):
             s = np.sum(tmp, axis=axis, keepdims=keepdims)
+            if return_sign:
+                sgn = np.sign(s)
+                s *= sgn  # /= makes more sense but we need zero -> zero
             out = np.log(s)
 
         if not keepdims:
             a_max = np.squeeze(a_max, axis=axis)
         out += a_max
-        return out
+
+        if return_sign:
+            return out, sgn
+        else:
+            return out
 
     def _set_pixel_scores(self, pixel_scores):
         "get softmaxed properly shaped pixel scores"
-        tmp = np.transpose(pixel_scores, (0, 2, 3, 1))
+        tmp = np.transpose(pixel_scores, (0,2,3,1))
         return self._softmax(tmp, axis=-1)[0, :, :, 1]
 
     def _set_link_scores(self, link_scores):
         "get softmaxed properly shaped links scores"
-        tmp = np.transpose(link_scores, (0, 2, 3, 1))
-        tmp_reshaped = tmp.reshape(tmp.shape[:-1] + (8, 2))
+        tmp = np.transpose(link_scores, (0,2,3,1))
+        tmp_reshaped = tmp.reshape(tmp.shape[:-1]+(8, 2))
         return self._softmax(tmp_reshaped, axis=-1)[0, :, :, :, 1]
 
     def _find_root(self, point):
@@ -138,6 +155,7 @@ class PixelLinkDecoder():
     def _mask_to_bboxes(self, min_area=300, min_height=10):
         image_h, image_w = self.image_shape
         self.bboxes = []
+        self.bbrect = []
         max_bbox_idx = self.mask.max()
         mask_tmp = cv2.resize(self.mask, (image_w, image_h), interpolation=cv2.INTER_NEAREST)
 
@@ -147,35 +165,37 @@ class PixelLinkDecoder():
             if len(cnts) == 0:
                 continue
             cnt = cnts[0]
-            rect, w, h = self._min_area_rect(cnt)
+            rect, w, h, bb = self._min_area_rect(cnt)
             if min(w, h) < min_height:
                 continue
-            if w * h < min_area:
+            if w*h < min_area:
                 continue
             self.bboxes.append(self._order_points(rect))
+            self.bbrect.append(bb)
+
 
     def _min_area_rect(self, cnt):
+        bb = cv2.boundingRect(cnt)
         rect = cv2.minAreaRect(cnt)
         w, h = rect[1]
         box = cv2.boxPoints(rect)
         box = np.int0(box)
-        return box, w, h
+        return box, w, h, bb
 
     def _order_points(self, rect):
         """ (x, y)
             Order: TL, TR, BR, BL
         """
         tmp = np.zeros_like(rect)
-        sums = rect.sum(axis=1)
+        sums = rect.sum(axis = 1)
         tmp[0] = rect[np.argmin(sums)]
         tmp[2] = rect[np.argmax(sums)]
-        diff = np.diff(rect, axis=1)
+        diff = np.diff(rect, axis = 1)
         tmp[1] = rect[np.argmin(diff)]
         tmp[3] = rect[np.argmax(diff)]
         return tmp
 
     def decode(self):
-        "Decode loaded data to ``self.bboxes``"
         for point in self.points:
             y, x = point
             neighbours = self._get_neighbours(x, y)
@@ -188,10 +208,17 @@ class PixelLinkDecoder():
         self._get_all()
         self._mask_to_bboxes()
 
-    def plot_result_cvgui(self, image):
-        "Plot and show decoded results via OpenCV's GUI"
-        for box in self.bboxes:
-            cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
-        cv2.imshow('Detected text', image)
-        if cv2.waitKey():
-            cv2.destroyAllWindows()
+    def plot_result(self, image):
+        img_tmp = image.copy()
+        for rect in self.bboxes:
+            cv2.drawContours(img_tmp, [rect], 0, (255,0,0), 2)
+        return img_tmp
+
+    def inference(self, img):
+        blob = cv2.dnn.blobFromImage(img, 1, (1280,768))
+        self.td.setInput(blob)
+        a, b = self.td.forward(self.td.getUnconnectedOutLayersNames())
+        self.load(img, b, a)
+        self.decode()
+        img_tmp = self.plot_result(img)
+        return img_tmp, self.bbrect
