@@ -1,0 +1,181 @@
+using NUnit.Framework;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Chrome;
+using OpenQA.Selenium.Firefox;
+using OpenQA.Selenium.Support.UI;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Globalization;
+using OpenQA.Selenium.Interactions;
+using OpenQA.Selenium.Remote;
+using System.Threading;
+
+namespace Selenium
+{
+    class Demo
+    {
+        IWebDriver driver;
+
+        [SetUp]
+        public void StartBrowser()
+        {
+            driver = new ChromeDriver("C:\\Users\\Ashif\\Desktop\\Selenium\\chromedriver_win32\\");
+        }
+
+        [Test]
+        public void Test1()
+        {
+            driver.Navigate().GoToUrl("http://bing.com");
+            Thread.Sleep(3);
+            driver.Url = "http://www.google.co.in";
+            //String text = driver.Title;
+            //Console.WriteLine(text);
+        }
+
+
+        /**
+            Navigate to Guru 99 demo page - http://demo.guru99.com/test/guru99home/
+            Maximize the window
+            Click on the 'Testing' menu
+            Close the browser
+        **/
+        [Test]
+        public void Test2()
+        {
+            driver.Url = "http://demo.guru99.com/test/guru99home/";
+            driver.Manage().Window.Maximize();
+            IWebElement link = driver.FindElement(By.XPath(".//*[@id='rt-header']//div[2]/div/ul/li[2]/a"));
+            link.Click();
+        }
+
+        /**
+            Navigate to Guru 99 demo page - http://demo.guru99.com/test/guru99home/
+            Enter data into email text box
+            Click on sign up button
+        **/
+        [Test]
+        public void Test3()
+        {
+            driver.Url = "http://demo.guru99.com/test/guru99home/";
+            driver.Manage().Window.Maximize();
+
+            // Store locator values of email text box and sign up button				
+            IWebElement emailTextBox = driver.FindElement(By.XPath(".//*[@id='philadelphia-field-email']"));
+            IWebElement signUpButton = driver.FindElement(By.XPath(".//*[@id='philadelphia-field-submit']"));
+
+            emailTextBox.SendKeys("test123@gmail.com");
+            signUpButton.Click();
+
+        }
+
+
+        /**
+            Navigate to Guru 99 demo page - http://demo.guru99.com/test/guru99home/
+            Click on SAP link
+            Enter data onto name and email text boxes
+            Select a value from the Course dropdown
+            Close the browser
+        **/
+        [Test]
+        public void Test4()
+        {
+            driver.Url = "http://demo.guru99.com/test/guru99home/";
+            driver.Manage().Window.Maximize();
+
+            IWebElement course = driver.FindElement(By.XPath(".//*[@id='awf_field-91977689']"));
+
+            var selectTest = new SelectElement(course);
+            // Select a value from the dropdown				
+            selectTest.SelectByValue("sap-abap");
+        }
+
+        [Test]
+        public void Test5()
+        {
+            
+            driver.Url = "https://imgur.com/register";
+
+
+            IWebElement username = driver.FindElement(By.Id("username"));
+            username.SendKeys("COMP671");
+
+            IWebElement email = driver.FindElement(By.Id("email"));
+            email.SendKeys("COMP671@franklin.edu");
+
+            IWebElement password = driver.FindElement(By.Id("password"));
+            password.SendKeys("my_example_password1");
+
+            IWebElement confirm_password = driver.FindElement(By.Id("confirm_password"));
+            confirm_password.SendKeys("my_example_password1");
+
+            IWebElement phone_number = driver.FindElement(By.Id("phone_number"));
+            phone_number.SendKeys("3475278125");
+
+            IWebElement next_button = driver.FindElement(By.Id("Imgur"));
+
+            Actions actions = new Actions(driver);
+            actions.MoveToElement(next_button).Perform();
+            Thread.Sleep(3);
+            next_button.Click();
+            Thread.Sleep(3);
+        }
+
+        [Test]
+        public void Test6()
+        {
+            driver.Url = "https://imgur.com/t/cat/vdBmtBG/";
+            Console.WriteLine("imgur gif test case started");
+            //driver = webdriver.Chrome();
+
+            driver.Manage().Window.Maximize();
+
+            if (driver.FindElement(By.XPath("//html/head/meta[31]")) == null)
+            {
+                Console.WriteLine("tag:funny was not found");
+            }
+            else
+            {
+                Console.WriteLine("tag:funny was found");
+
+                if (!driver.FindElement(By.Id("submit-comment")).Enabled)
+                {
+                    Console.WriteLine("Post comment is not enabled");
+                }
+                else
+                {
+                    Console.WriteLine("Post comment is enabled");
+
+                    if (driver.FindElement(By.XPath(".//*[@id='inside']/div[2]/div[3]/div[1]/div/div[1]/div[2]/div")) != null)
+                    {
+                        Console.WriteLine("Next Post button was not found");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Next Post button was found");
+
+                        if (driver.FindElement(By.XPath(".//*[@id='captions']/div[2]/span[2]/div[1]/div/div[1]/span/span")) != null)
+                        {
+                            Console.WriteLine("top comment: touch the kitty was not found");
+                        }
+                        else
+                        {
+                            Console.WriteLine("top comment: touch the kitty was found");
+                        }
+                    }
+                }
+            }
+            Console.WriteLine("imgur gif test case successfully completed");
+        }
+
+        [TearDown]
+        public void CloseBrowser()
+        {
+            System.Threading.Thread.Sleep(30000);
+            driver.Close();
+        }
+
+    }
+}
